@@ -9,7 +9,7 @@ import yt_dlp
 app = Flask(__name__)
 
 # Geçici indirme klasörü
-DOWNLOAD_FOLDER = "/tmp/yt_downloads"
+DOWNLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 # Aktif indirme oturumlarını takip eden sözlük
