@@ -1,0 +1,607 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>YT Dönüştürücü</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #0a0a0a;
+      --surface: #111111;
+      --border: #1e1e1e;
+      --accent: #ff3c3c;
+      --accent2: #ff7043;
+      --text: #f0ede8;
+      --muted: #555;
+      --success: #22c55e;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem 1rem;
+      overflow-x: hidden;
+    }
+
+    /* Arka plan ızgara efekti */
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(255,60,60,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,60,60,0.03) 1px, transparent 1px);
+      background-size: 40px 40px;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .container {
+      position: relative;
+      z-index: 1;
+      width: 100%;
+      max-width: 600px;
+    }
+
+    /* Başlık */
+    .header {
+      text-align: center;
+      margin-bottom: 3rem;
+    }
+
+    .header .eyebrow {
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: var(--accent);
+      margin-bottom: 0.5rem;
+    }
+
+    .header h1 {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: clamp(3.5rem, 10vw, 6rem);
+      letter-spacing: 0.04em;
+      line-height: 0.9;
+      background: linear-gradient(135deg, #f0ede8 30%, #ff3c3c 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+    }
+
+    .header p {
+      margin-top: 1rem;
+      font-size: 0.85rem;
+      color: var(--muted);
+      letter-spacing: 0.02em;
+    }
+
+    /* Kart */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2rem;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .card::before {
+      content: '';
+      position: absolute;
+      top: 0; left: 0; right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--accent), transparent);
+      opacity: 0.6;
+    }
+
+    /* URL Girişi */
+    .input-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .input-label {
+      display: block;
+      font-size: 0.7rem;
+      font-weight: 500;
+      letter-spacing: 0.15em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 0.6rem;
+    }
+
+    .url-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.9rem 1.1rem;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      outline: none;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+
+    .url-input:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(255,60,60,0.08);
+    }
+
+    .url-input::placeholder { color: #333; }
+
+    /* Format Seçimi */
+    .format-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1.5rem;
+    }
+
+    .format-btn {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.75rem;
+      color: var(--muted);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.85rem;
+      font-weight: 500;
+      letter-spacing: 0.05em;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+
+    .format-btn:hover {
+      border-color: #333;
+      color: var(--text);
+    }
+
+    .format-btn.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+      box-shadow: 0 4px 20px rgba(255,60,60,0.25);
+    }
+
+    .format-btn .fmt-icon {
+      display: block;
+      font-size: 1.4rem;
+      margin-bottom: 0.2rem;
+    }
+
+    /* Kalite Seçimi */
+    .quality-group {
+      margin-bottom: 1.75rem;
+    }
+
+    .quality-select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.9rem 1.1rem;
+      color: var(--text);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.9rem;
+      outline: none;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%23555' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 1rem center;
+      transition: border-color 0.2s;
+    }
+
+    .quality-select:focus { border-color: var(--accent); }
+    .quality-select option { background: #111; }
+
+    /* Dönüştür Butonu */
+    .convert-btn {
+      width: 100%;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border: none;
+      border-radius: 10px;
+      padding: 1rem;
+      color: #fff;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.2rem;
+      letter-spacing: 0.12em;
+      cursor: pointer;
+      transition: all 0.2s;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .convert-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 30px rgba(255,60,60,0.35);
+    }
+
+    .convert-btn:active:not(:disabled) { transform: translateY(0); }
+
+    .convert-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* Progress Alanı */
+    .progress-section {
+      margin-top: 1.75rem;
+      display: none;
+    }
+
+    .progress-section.visible { display: block; }
+
+    .progress-info {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 0.5rem;
+    }
+
+    .progress-label {
+      font-size: 0.75rem;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--muted);
+    }
+
+    .progress-pct {
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.1rem;
+      color: var(--accent);
+    }
+
+    .progress-bar-track {
+      width: 100%;
+      height: 4px;
+      background: var(--border);
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .progress-bar-fill {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, var(--accent), var(--accent2));
+      border-radius: 999px;
+      transition: width 0.4s ease;
+      position: relative;
+    }
+
+    .progress-bar-fill::after {
+      content: '';
+      position: absolute;
+      right: 0; top: 0; bottom: 0;
+      width: 40px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.4));
+      animation: shimmer 1.2s infinite;
+    }
+
+    @keyframes shimmer {
+      0% { opacity: 0; }
+      50% { opacity: 1; }
+      100% { opacity: 0; }
+    }
+
+    .status-text {
+      margin-top: 0.6rem;
+      font-size: 0.78rem;
+      color: var(--muted);
+      text-align: center;
+      min-height: 1.2em;
+    }
+
+    /* Sonuç Alanı */
+    .result-section {
+      margin-top: 1.75rem;
+      display: none;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .result-section.visible { display: flex; }
+
+    .download-btn {
+      width: 100%;
+      background: var(--success);
+      border: none;
+      border-radius: 10px;
+      padding: 1rem;
+      color: #fff;
+      font-family: 'Bebas Neue', sans-serif;
+      font-size: 1.2rem;
+      letter-spacing: 0.12em;
+      cursor: pointer;
+      transition: all 0.2s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .download-btn:hover {
+      filter: brightness(1.1);
+      transform: translateY(-1px);
+      box-shadow: 0 8px 30px rgba(34,197,94,0.3);
+    }
+
+    .reset-btn {
+      width: 100%;
+      background: transparent;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 0.85rem;
+      color: var(--muted);
+      font-family: 'DM Sans', sans-serif;
+      font-size: 0.85rem;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+
+    .reset-btn:hover {
+      border-color: #333;
+      color: var(--text);
+    }
+
+    /* Hata */
+    .error-box {
+      margin-top: 1rem;
+      padding: 0.9rem 1.1rem;
+      background: rgba(255,60,60,0.08);
+      border: 1px solid rgba(255,60,60,0.2);
+      border-radius: 10px;
+      font-size: 0.82rem;
+      color: #ff8080;
+      display: none;
+    }
+
+    .error-box.visible { display: block; }
+
+    /* Footer */
+    .footer {
+      margin-top: 2.5rem;
+      text-align: center;
+      font-size: 0.7rem;
+      color: #2a2a2a;
+      letter-spacing: 0.05em;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="container">
+    <div class="header">
+      <p class="eyebrow">YouTube Dönüştürücü</p>
+      <h1>YT<br>CONVERT</h1>
+      <p>Video ve ses dosyalarını saniyeler içinde indir</p>
+    </div>
+
+    <div class="card">
+      <!-- URL -->
+      <div class="input-group">
+        <label class="input-label" for="urlInput">YouTube Linki</label>
+        <input
+          id="urlInput"
+          class="url-input"
+          type="url"
+          placeholder="https://www.youtube.com/watch?v=..."
+          autocomplete="off"
+          spellcheck="false"
+        />
+      </div>
+
+      <!-- Format -->
+      <div class="input-group">
+        <label class="input-label">Format</label>
+        <div class="format-row">
+          <button class="format-btn active" data-fmt="mp3" onclick="selectFormat('mp3', this)">
+            <span class="fmt-icon">🎵</span>MP3 — Ses
+          </button>
+          <button class="format-btn" data-fmt="mp4" onclick="selectFormat('mp4', this)">
+            <span class="fmt-icon">🎬</span>MP4 — Video
+          </button>
+        </div>
+      </div>
+
+      <!-- Kalite -->
+      <div class="quality-group">
+        <label class="input-label" for="qualitySelect">Kalite</label>
+        <select id="qualitySelect" class="quality-select">
+          <option value="320">320 kbps — En Yüksek</option>
+          <option value="192" selected>192 kbps — Yüksek</option>
+          <option value="128">128 kbps — Standart</option>
+          <option value="96">96 kbps — Düşük</option>
+        </select>
+      </div>
+
+      <!-- Dönüştür -->
+      <button class="convert-btn" id="convertBtn" onclick="startConvert()">
+        DÖNÜŞTÜR
+      </button>
+
+      <!-- İlerleme -->
+      <div class="progress-section" id="progressSection">
+        <div class="progress-info">
+          <span class="progress-label" id="progressLabel">İndiriliyor</span>
+          <span class="progress-pct" id="progressPct">0%</span>
+        </div>
+        <div class="progress-bar-track">
+          <div class="progress-bar-fill" id="progressBar"></div>
+        </div>
+        <p class="status-text" id="statusText">Bağlanılıyor...</p>
+      </div>
+
+      <!-- Hata -->
+      <div class="error-box" id="errorBox"></div>
+
+      <!-- Sonuç -->
+      <div class="result-section" id="resultSection">
+        <button class="download-btn" id="downloadBtn">
+          ⬇ DOSYAYI İNDİR
+        </button>
+        <button class="reset-btn" onclick="resetPage()">
+          ↩ Farklı Bir Video Dönüştür
+        </button>
+      </div>
+    </div>
+
+    <p class="footer">Sunucu taraflı işlem · Dosyalar otomatik silinir</p>
+  </div>
+
+  <script>
+    let selectedFormat = 'mp3';
+    let pollingInterval = null;
+    let currentSessionId = null;
+
+    const mp3Qualities = [
+      { value: '320', label: '320 kbps — En Yüksek' },
+      { value: '192', label: '192 kbps — Yüksek' },
+      { value: '128', label: '128 kbps — Standart' },
+      { value: '96',  label: '96 kbps — Düşük' },
+    ];
+
+    const mp4Qualities = [
+      { value: '1080', label: '1080p — Full HD' },
+      { value: '720',  label: '720p — HD' },
+      { value: '480',  label: '480p — Standart' },
+      { value: '360',  label: '360p — Düşük' },
+    ];
+
+    function selectFormat(fmt, btn) {
+      selectedFormat = fmt;
+      document.querySelectorAll('.format-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+
+      const sel = document.getElementById('qualitySelect');
+      const options = fmt === 'mp3' ? mp3Qualities : mp4Qualities;
+      sel.innerHTML = options.map((o, i) =>
+        `<option value="${o.value}"${i===1?' selected':''}>${o.label}</option>`
+      ).join('');
+    }
+
+    function setStatus(label, text) {
+      document.getElementById('progressLabel').textContent = label;
+      document.getElementById('statusText').textContent = text;
+    }
+
+    function setProgress(pct) {
+      document.getElementById('progressBar').style.width = pct + '%';
+      document.getElementById('progressPct').textContent = pct + '%';
+    }
+
+    function showError(msg) {
+      const box = document.getElementById('errorBox');
+      box.textContent = '⚠ ' + msg;
+      box.classList.add('visible');
+      document.getElementById('convertBtn').disabled = false;
+    }
+
+    function hideError() {
+      document.getElementById('errorBox').classList.remove('visible');
+    }
+
+    async function startConvert() {
+      const url = document.getElementById('urlInput').value.trim();
+      if (!url) { showError('Lütfen bir YouTube linki girin.'); return; }
+
+      hideError();
+      document.getElementById('convertBtn').disabled = true;
+      document.getElementById('progressSection').classList.add('visible');
+      document.getElementById('resultSection').classList.remove('visible');
+      setProgress(0);
+      setStatus('Başlatılıyor', 'Sunucuya bağlanılıyor...');
+
+      const quality = document.getElementById('qualitySelect').value;
+
+      try {
+        const res = await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ url, format: selectedFormat, quality }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Sunucu hatası.');
+
+        currentSessionId = data.session_id;
+        pollProgress(currentSessionId);
+
+      } catch (e) {
+        showError(e.message);
+        document.getElementById('progressSection').classList.remove('visible');
+      }
+    }
+
+    function pollProgress(sessionId) {
+      clearInterval(pollingInterval);
+      pollingInterval = setInterval(async () => {
+        try {
+          const res = await fetch(`/api/progress/${sessionId}`);
+          const data = await res.json();
+
+          if (data.error) { clearInterval(pollingInterval); showError(data.error); return; }
+
+          setProgress(data.progress);
+
+          const statusMap = {
+            starting:    ['Başlatılıyor', 'Video bilgileri alınıyor...'],
+            downloading: ['İndiriliyor',  'Video sunucuya indiriliyor...'],
+            processing:  ['İşleniyor',    'Format dönüşümü yapılıyor...'],
+            done:        ['Tamamlandı',   'Dosya hazır!'],
+            error:       ['Hata',         data.error || 'Bir hata oluştu.'],
+          };
+
+          const [label, text] = statusMap[data.status] || ['İşleniyor', '...'];
+          setStatus(label, text);
+
+          if (data.status === 'done') {
+            clearInterval(pollingInterval);
+            onDownloadReady(sessionId, data.filename);
+          } else if (data.status === 'error') {
+            clearInterval(pollingInterval);
+            showError(data.error || 'Bilinmeyen bir hata oluştu.');
+            document.getElementById('progressSection').classList.remove('visible');
+            document.getElementById('convertBtn').disabled = false;
+          }
+        } catch (e) {
+          clearInterval(pollingInterval);
+          showError('Sunucuyla bağlantı kesildi.');
+        }
+      }, 800);
+    }
+
+    function onDownloadReady(sessionId, filename) {
+      document.getElementById('resultSection').classList.add('visible');
+      const btn = document.getElementById('downloadBtn');
+      btn.onclick = () => {
+        window.location.href = `/api/download/${sessionId}`;
+      };
+    }
+
+    function resetPage() {
+      clearInterval(pollingInterval);
+      currentSessionId = null;
+      document.getElementById('urlInput').value = '';
+      document.getElementById('progressSection').classList.remove('visible');
+      document.getElementById('resultSection').classList.remove('visible');
+      document.getElementById('convertBtn').disabled = false;
+      hideError();
+      setProgress(0);
+      setStatus('İndiriliyor', 'Bağlanılıyor...');
+    }
+  </script>
+</body>
+</html>
