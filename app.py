@@ -90,6 +90,7 @@ def run_download(session_id, url, fmt, quality):
                 "merge_output_format": "mp4",
                 "outtmpl": output_template,
                 "noplaylist": True,
+                "cookiefile": "cookies.txt",
             }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
