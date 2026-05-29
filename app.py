@@ -86,7 +86,7 @@ def run_download(session_id, url, fmt, quality):
             )
 
             ydl_opts = {
-                "format": f"bestvideo[height<={quality}]+bestaudio/best/best",
+                "format": 
                 "merge_output_format": "mp4",
                 "outtmpl": output_template,
                 "noplaylist": True,
