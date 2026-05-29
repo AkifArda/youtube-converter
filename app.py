@@ -2,32 +2,39 @@ import os
 import uuid
 import threading
 import time
-import requests
-from flask import Flask, request, jsonify, send_file, render_template, after_this_request
+import yt_dlp
+
+from flask import (
+    Flask,
+    request,
+    jsonify,
+    send_file,
+    render_template,
+    after_this_request,
+)
 
 app = Flask(__name__)
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DOWNLOAD_FOLDER = os.path.join(BASE_DIR, "downloads")
+
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
 sessions = {}
 
-COBALT_API = "https://api.cobalt.tools"
-
 
 def cleanup_old_files(max_age_seconds=1800):
     try:
-        for entry in os.scandir(DOWNLOAD_FOLDER):
-            if entry.is_dir():
-                for f in os.scandir(entry.path):
-                    if time.time() - f.stat().st_mtime > max_age_seconds:
-                        os.remove(f.path)
+        for folder in os.scandir(DOWNLOAD_FOLDER):
+            if folder.is_dir():
+                for file in os.scandir(folder.path):
+                    if time.time() - file.stat().st_mtime > max_age_seconds:
+                        os.remove(file.path)
 
                 try:
-                    if not os.listdir(entry.path):
-                        os.rmdir(entry.path)
-                except OSError:
+                    if not os.listdir(folder.path):
+                        os.rmdir(folder.path)
+                except Exception:
                     pass
     except Exception:
         pass
@@ -44,89 +51,66 @@ threading.Thread(target=periodic_cleanup, daemon=True).start()
 
 def run_download(session_id, url, fmt, quality):
     session = sessions[session_id]
-    session["status"] = "downloading"
-    session["progress"] = 10
 
     try:
-        if fmt == "mp3":
-            payload = {
-                "url": url,
-                "audioOnly": True
-            }
-        else:
-            payload = {
-                "url": url,
-                "videoQuality": quality
-            }
-
-        headers = {
-            "Accept": "application/json",
-            "Content-Type": "application/json",
-        }
-
-        session["progress"] = 20
-
-        response = requests.post(
-            COBALT_API,
-            json=payload,
-            headers=headers,
-            timeout=30,
-        )
-
-        print("Cobalt status:", response.status_code)
-        print("Cobalt response:", response.text)
-
-        response.raise_for_status()
-
-        data = response.json()
-
-        if data.get("status") == "error":
-            raise Exception(
-                data.get("error", {}).get("code", "Cobalt API hatası")
-            )
-
-        download_url = data.get("url")
-
-        if not download_url:
-            raise Exception("İndirme linki alınamadı.")
-
-        session["progress"] = 50
+        session["status"] = "downloading"
+        session["progress"] = 10
 
         session_dir = os.path.join(DOWNLOAD_FOLDER, session_id)
         os.makedirs(session_dir, exist_ok=True)
 
-        filename = data.get("filename") or f"download.{fmt}"
+        if fmt == "mp3":
+            output_template = os.path.join(
+                session_dir,
+                "%(title)s.%(ext)s"
+            )
 
-        if not filename.endswith(f".{fmt}"):
-            filename = f"{os.path.splitext(filename)[0]}.{fmt}"
+            ydl_opts = {
+                "format": "bestaudio/best",
+                "outtmpl": output_template,
+                "noplaylist": True,
+                "postprocessors": [
+                    {
+                        "key": "FFmpegExtractAudio",
+                        "preferredcodec": "mp3",
+                        "preferredquality": quality,
+                    }
+                ],
+            }
 
+        else:
+            output_template = os.path.join(
+                session_dir,
+                "%(title)s.%(ext)s"
+            )
+
+            ydl_opts = {
+                "format": f"bestvideo[height<={quality}]+bestaudio/best/best",
+                "merge_output_format": "mp4",
+                "outtmpl": output_template,
+                "noplaylist": True,
+            }
+
+        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+            info = ydl.extract_info(url, download=True)
+
+        files = os.listdir(session_dir)
+
+        if not files:
+            raise Exception("Dosya indirilemedi.")
+
+        filename = files[0]
         filepath = os.path.join(session_dir, filename)
 
-        with requests.get(download_url, stream=True, timeout=120) as r:
-            r.raise_for_status()
-
-            total = int(r.headers.get("content-length", 0))
-            downloaded = 0
-
-            with open(filepath, "wb") as f:
-                for chunk in r.iter_content(chunk_size=8192):
-                    if chunk:
-                        f.write(chunk)
-                        downloaded += len(chunk)
-
-                        if total:
-                            pct = 50 + int(downloaded / total * 45)
-                            session["progress"] = min(pct, 95)
-
-        session["filepath"] = filepath
         session["filename"] = filename
+        session["filepath"] = filepath
         session["progress"] = 100
         session["status"] = "done"
 
     except Exception as e:
         session["status"] = "error"
         session["error"] = str(e)
-        session["progress"] = 0
+        print("yt-dlp error:", e)
 
 
 @app.route("/")
@@ -142,7 +126,7 @@ def start_download():
 
     url = data.get("url", "").strip()
     fmt = data.get("format", "mp3")
-    quality = data.get("quality", "720")
+    quality = data.get("quality", "192")
 
     if not url:
         return jsonify({"error": "URL boş olamaz."}), 400
@@ -208,7 +192,7 @@ def download_file(session_id):
     return send_file(
         filepath,
         as_attachment=True,
-        download_name=session["filename"],
+        download_name=session["filename"]
     )
 
 
