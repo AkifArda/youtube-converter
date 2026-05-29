@@ -69,6 +69,7 @@ def run_download(session_id, url, fmt, quality):
                 "format": "bestaudio/best",
                 "outtmpl": output_template,
                 "noplaylist": True,
+                "cookiefile": "cookies.txt",
                 "postprocessors": [
                     {
                         "key": "FFmpegExtractAudio",
