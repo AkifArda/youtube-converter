@@ -17,7 +17,7 @@ os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 sessions_lock = threading.Lock()
 sessions = {}
 
-COBALT_API = "https://co.wuk.sh"
+COBALT_API = "https://api.cobalt.cloud"
 
 def cleanup_old_files(max_age_seconds=1800):
     """Belirli bir süreden eski kalmış indirme klasörlerini temizler."""
