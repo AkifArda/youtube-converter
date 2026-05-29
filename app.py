@@ -57,29 +57,30 @@ def run_download(session_id, url, fmt, quality):
             sessions[session_id]["progress"] = 10
 
     try:
-        # Cobalt API Güncel Payload Kurulumu
+        # Cobalt API Güncel v10+ Payload Yapısı (400 Hatasını Önlemek İçin)
         if fmt == "mp3":
             payload = {
                 "url": url,
+                "downloadMode": "audio",
                 "audioFormat": "mp3",
-                "audioBitrate": quality,  # Örn: "320", "192"
-                "filenamePattern": "basic"
+                "audioBitrate": int(quality) if quality.isdigit() else 192
             }
         else:
             payload = {
                 "url": url,
-                "videoQuality": quality if quality in ["1080", "720", "480", "360"] else "720",
-                "filenamePattern": "basic"
+                "downloadMode": "video",
+                "videoQuality": quality if quality in ["1080", "720", "480", "360"] else "720"
             }
 
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
 
         with sessions_lock:
-            if session_id in sessions: sessions[session_id]["progress"] = 25
+            if session_id in sessions: 
+                sessions[session_id]["progress"] = 25
 
         response = requests.post(
             f"{COBALT_API}/",
@@ -88,15 +89,20 @@ def run_download(session_id, url, fmt, quality):
             timeout=30,
         )
 
+        # 400 ve diğer hatalarda Cobalt'ın döndüğü ham mesajı yakalıyoruz
         if response.status_code != 200:
-            raise Exception(f"Cobalt API hatası (Kod: {response.status_code})")
+            try:
+                err_detail = response.json().get("error", {}).get("code", response.text)
+            except Exception:
+                err_detail = response.text
+            raise Exception(f"Cobalt API hatası (Kod: {response.status_code}) - Detay: {err_detail}")
 
         data = response.json()
         
         with sessions_lock:
-            if session_id in sessions: sessions[session_id]["progress"] = 45
+            if session_id in sessions: 
+                sessions[session_id]["progress"] = 45
 
-        # Durum kontrolü
         status = data.get("status")
         if status == "error":
             error_msg = data.get("error", {}).get("code", "Bilinmeyen Cobalt hatası")
@@ -107,28 +113,28 @@ def run_download(session_id, url, fmt, quality):
             raise Exception("Cobalt'tan indirme bağlantısı alınamadı.")
 
         with sessions_lock:
-            if session_id in sessions: sessions[session_id]["progress"] = 55
+            if session_id in sessions: 
+                sessions[session_id]["progress"] = 55
 
-        # Dosya ismi güvenliği ve klasörleme
+        # Klasörleme ve Güvenli Dosya İsmi (Karakter hatalarını önler)
         session_dir = os.path.join(DOWNLOAD_FOLDER, session_id)
         os.makedirs(session_dir, exist_ok=True)
 
         raw_filename = data.get("filename") or f"download_{session_id[:8]}.{fmt}"
-        # Dosya uzantısını garantiye al ve işletim sistemi için güvenli yap
         clean_filename = secure_filename(raw_filename)
         if not clean_filename.endswith(f".{fmt}"):
             clean_filename = os.path.splitext(clean_filename)[0] + f".{fmt}"
 
         filepath = os.path.join(session_dir, clean_filename)
 
-        # Stream olarak sunucuya indirme aşaması
+        # Dosyayı stream (parça parça) olarak sunucuya indirme
         with requests.get(download_url, stream=True, timeout=120) as r:
             r.raise_for_status()
             total = int(r.headers.get("content-length", 0))
             downloaded = 0
             
             with open(filepath, "wb") as f:
-                for chunk in r.iter_content(chunk_size=16384): # Buffer boyutu optimize edildi
+                for chunk in r.iter_content(chunk_size=16384):
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
@@ -138,7 +144,7 @@ def run_download(session_id, url, fmt, quality):
                                 if session_id in sessions:
                                     sessions[session_id]["progress"] = min(pct, 95)
 
-        # Tamamlanma durumu güncellemesi
+        # İşlem başarıyla bitti durum güncellemesi
         with sessions_lock:
             if session_id in sessions:
                 sessions[session_id]["filepath"] = filepath
@@ -161,7 +167,7 @@ def index():
 
 @app.route("/api/start", methods=["POST"])
 def start_download():
-    # İstek geldiğinde eski dosyaları asenkron olmasa da hızlıca bir tara
+    # Yeni indirme isteğinde eski dosyaları asenkron olmasa da hızlıca tara
     cleanup_old_files()
     
     data = request.get_json() or {}
@@ -215,7 +221,7 @@ def download_file(session_id):
         session = sessions.get(session_id)
 
     if not session or session["status"] != "done":
-        return jsonify({"error": "Dosya henüz hazır değil veya session silindi."}), 404
+        return jsonify({"error": "Dosya henüz hazır değil veya oturum silindi."}), 404
 
     filepath = session["filepath"]
     filename = session["filename"]
@@ -226,14 +232,14 @@ def download_file(session_id):
     @after_this_request
     def remove_file(response):
         try:
-            # Dosyayı gönderdikten hemen sonra yerel diskten kaldır
+            # Kullanıcı indirdiği an dosyayı yerel diskten güvenle kaldırır
             if os.path.exists(filepath):
                 os.remove(filepath)
             session_dir = os.path.dirname(filepath)
             if os.path.isdir(session_dir) and not os.listdir(session_dir):
                 os.rmdir(session_dir)
             
-            # RAM'deki session kaydını temizle
+            # RAM'deki session kaydını temizler (Memory leak önleyici)
             with sessions_lock:
                 sessions.pop(session_id, None)
         except Exception:
@@ -245,5 +251,4 @@ def download_file(session_id):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    # Local testler için debug=False stabil kalmasını sağlar
     app.run(host="0.0.0.0", port=port, debug=False)
