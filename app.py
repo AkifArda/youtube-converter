@@ -4,7 +4,7 @@ import threading
 import time
 import glob
 from flask import Flask, request, jsonify, send_file, render_template, after_this_request
-import yt_dlp
+import requests
 
 app = Flask(__name__)
 
