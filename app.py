@@ -40,7 +40,6 @@ cleanup_thread.start()
 
 
 def get_common_opts():
-    """Her iki format için ortak ayarlar."""
     opts = {
         "extractor_args": {
             "youtube": {
@@ -51,7 +50,6 @@ def get_common_opts():
         "quiet": True,
         "no_warnings": True,
     }
-    # cookies.txt varsa ekle
     if os.path.exists(COOKIES_FILE):
         opts["cookiefile"] = COOKIES_FILE
     return opts
@@ -80,6 +78,7 @@ def run_download(session_id, url, fmt, quality):
     if fmt == "mp3":
         ydl_opts = {
             **common,
+            # Shorts dahil her video türü için en iyi sesi al
             "format": "bestaudio/best",
             "outtmpl": output_template,
             "progress_hooks": [progress_hook],
@@ -92,11 +91,12 @@ def run_download(session_id, url, fmt, quality):
             ],
         }
     else:
+        # Shorts ve normal videolar için evrensel format seçimi
         quality_map = {
-            "1080": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
-            "720":  "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best",
-            "480":  "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best",
-            "360":  "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best",
+            "1080": "bestvideo[height<=1080]+bestaudio/bestvideo[height<=1080]/best[height<=1080]/best",
+            "720":  "bestvideo[height<=720]+bestaudio/bestvideo[height<=720]/best[height<=720]/best",
+            "480":  "bestvideo[height<=480]+bestaudio/bestvideo[height<=480]/best[height<=480]/best",
+            "360":  "bestvideo[height<=360]+bestaudio/bestvideo[height<=360]/best[height<=360]/best",
         }
         ydl_opts = {
             **common,
