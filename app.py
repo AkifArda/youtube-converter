@@ -4,160 +4,130 @@ import threading
 import time
 import requests
 from flask import Flask, request, jsonify, send_file, render_template, after_this_request
-from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 
-# Klasör yapılandırması
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DOWNLOAD_FOLDER = os.path.join(BASE_DIR, "downloads")
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-# İş parçacığı (thread) güvenliği için kilit ve oturum havuzu
-sessions_lock = threading.Lock()
 sessions = {}
 
-COBALT_API = "https://api.cobalt.cloud"
+COBALT_API = "https://api.cobalt.tools"
+
 
 def cleanup_old_files(max_age_seconds=1800):
-    """Belirli bir süreden eski kalmış indirme klasörlerini temizler."""
     try:
         for entry in os.scandir(DOWNLOAD_FOLDER):
             if entry.is_dir():
-                dir_empty = True
                 for f in os.scandir(entry.path):
                     if time.time() - f.stat().st_mtime > max_age_seconds:
-                        try:
-                            os.remove(f.path)
-                        except Exception:
-                            dir_empty = False
-                    else:
-                        dir_empty = False
-                if dir_empty:
-                    try:
+                        os.remove(f.path)
+
+                try:
+                    if not os.listdir(entry.path):
                         os.rmdir(entry.path)
-                    except Exception:
-                        pass
+                except OSError:
+                    pass
     except Exception:
         pass
 
+
 def periodic_cleanup():
-    """Arka planda çalışan temizlik döngüsü."""
     while True:
-        time.sleep(900)  # 15 dakikada bir çalışır
+        time.sleep(900)
         cleanup_old_files()
 
-# Arka plan temizlik iş parçacığını başlat
+
 threading.Thread(target=periodic_cleanup, daemon=True).start()
 
+
 def run_download(session_id, url, fmt, quality):
-    with sessions_lock:
-        if session_id in sessions:
-            sessions[session_id]["status"] = "downloading"
-            sessions[session_id]["progress"] = 10
+    session = sessions[session_id]
+    session["status"] = "downloading"
+    session["progress"] = 10
 
     try:
-        # Cobalt API Güncel v10+ Payload Yapısı (400 Hatasını Önlemek İçin)
         if fmt == "mp3":
             payload = {
                 "url": url,
                 "downloadMode": "audio",
                 "audioFormat": "mp3",
-                "audioBitrate": int(quality) if quality.isdigit() else 192
+                "audioBitrate": quality,
             }
         else:
             payload = {
                 "url": url,
-                "downloadMode": "video",
-                "videoQuality": quality if quality in ["1080", "720", "480", "360"] else "720"
+                "downloadMode": "auto",
+                "videoQuality": quality,
             }
 
         headers = {
             "Accept": "application/json",
             "Content-Type": "application/json",
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         }
 
-        with sessions_lock:
-            if session_id in sessions: 
-                sessions[session_id]["progress"] = 25
+        session["progress"] = 20
 
         response = requests.post(
-            f"{COBALT_API}/",
+            COBALT_API,
             json=payload,
             headers=headers,
             timeout=30,
         )
 
-        # 400 ve diğer hatalarda Cobalt'ın döndüğü ham mesajı yakalıyoruz
-        if response.status_code != 200:
-            try:
-                err_detail = response.json().get("error", {}).get("code", response.text)
-            except Exception:
-                err_detail = response.text
-            raise Exception(f"Cobalt API hatası (Kod: {response.status_code}) - Detay: {err_detail}")
+        response.raise_for_status()
 
         data = response.json()
-        
-        with sessions_lock:
-            if session_id in sessions: 
-                sessions[session_id]["progress"] = 45
+        session["progress"] = 40
 
-        status = data.get("status")
-        if status == "error":
-            error_msg = data.get("error", {}).get("code", "Bilinmeyen Cobalt hatası")
-            raise Exception(f"Cobalt Hatası: {error_msg}")
+        if data.get("status") == "error":
+            raise Exception(
+                data.get("error", {}).get("code", "Cobalt API hatası")
+            )
 
         download_url = data.get("url")
+
         if not download_url:
-            raise Exception("Cobalt'tan indirme bağlantısı alınamadı.")
+            raise Exception("Cobalt indirme bağlantısı alınamadı.")
 
-        with sessions_lock:
-            if session_id in sessions: 
-                sessions[session_id]["progress"] = 55
+        session["progress"] = 50
 
-        # Klasörleme ve Güvenli Dosya İsmi (Karakter hatalarını önler)
         session_dir = os.path.join(DOWNLOAD_FOLDER, session_id)
         os.makedirs(session_dir, exist_ok=True)
 
-        raw_filename = data.get("filename") or f"download_{session_id[:8]}.{fmt}"
-        clean_filename = secure_filename(raw_filename)
-        if not clean_filename.endswith(f".{fmt}"):
-            clean_filename = os.path.splitext(clean_filename)[0] + f".{fmt}"
+        filename = data.get("filename") or f"download.{fmt}"
 
-        filepath = os.path.join(session_dir, clean_filename)
+        if not filename.endswith(f".{fmt}"):
+            filename = f"{os.path.splitext(filename)[0]}.{fmt}"
 
-        # Dosyayı stream (parça parça) olarak sunucuya indirme
+        filepath = os.path.join(session_dir, filename)
+
         with requests.get(download_url, stream=True, timeout=120) as r:
             r.raise_for_status()
+
             total = int(r.headers.get("content-length", 0))
             downloaded = 0
-            
+
             with open(filepath, "wb") as f:
-                for chunk in r.iter_content(chunk_size=16384):
+                for chunk in r.iter_content(chunk_size=8192):
                     if chunk:
                         f.write(chunk)
                         downloaded += len(chunk)
-                        if total:
-                            pct = 55 + int(downloaded / total * 40)
-                            with sessions_lock:
-                                if session_id in sessions:
-                                    sessions[session_id]["progress"] = min(pct, 95)
 
-        # İşlem başarıyla bitti durum güncellemesi
-        with sessions_lock:
-            if session_id in sessions:
-                sessions[session_id]["filepath"] = filepath
-                sessions[session_id]["filename"] = clean_filename
-                sessions[session_id]["progress"] = 100
-                sessions[session_id]["status"] = "done"
+                        if total:
+                            pct = 50 + int(downloaded / total * 45)
+                            session["progress"] = min(pct, 95)
+
+        session["filepath"] = filepath
+        session["filename"] = filename
+        session["progress"] = 100
+        session["status"] = "done"
 
     except Exception as e:
-        with sessions_lock:
-            if session_id in sessions:
-                sessions[session_id]["status"] = "error"
-                sessions[session_id]["error"] = str(e)
-                sessions[session_id]["progress"] = 0
+        session["status"] = "error"
+        session["error"] = str(e)
+        session["progress"] = 0
 
 
 @app.route("/")
@@ -167,29 +137,27 @@ def index():
 
 @app.route("/api/start", methods=["POST"])
 def start_download():
-    # Yeni indirme isteğinde eski dosyaları asenkron olmasa da hızlıca tara
     cleanup_old_files()
-    
-    data = request.get_json() or {}
+
+    data = request.get_json(force=True)
+
     url = data.get("url", "").strip()
     fmt = data.get("format", "mp3")
     quality = data.get("quality", "192")
 
     if not url:
-        return jsonify({"error": "Lütfen geçerli bir URL girin."}), 400
+        return jsonify({"error": "URL boş olamaz."}), 400
 
     session_id = str(uuid.uuid4())
-    
-    with sessions_lock:
-        sessions[session_id] = {
-            "progress": 0,
-            "status": "starting",
-            "filename": None,
-            "filepath": None,
-            "error": None,
-        }
 
-    # İndirme işlemini arka planda tetikle
+    sessions[session_id] = {
+        "progress": 0,
+        "status": "starting",
+        "filename": None,
+        "filepath": None,
+        "error": None,
+    }
+
     threading.Thread(
         target=run_download,
         args=(session_id, url, fmt, quality),
@@ -201,54 +169,50 @@ def start_download():
 
 @app.route("/api/progress/<session_id>")
 def get_progress(session_id):
-    with sessions_lock:
-        session = sessions.get(session_id)
-    
+    session = sessions.get(session_id)
+
     if not session:
-        return jsonify({"error": "Oturum bulunamadı veya süresi doldu."}), 404
-        
-    return jsonify({
-        "progress": session["progress"],
-        "status": session["status"],
-        "filename": session["filename"],
-        "error": session["error"],
-    })
+        return jsonify({"error": "Oturum bulunamadı."}), 404
+
+    return jsonify(session)
 
 
 @app.route("/api/download/<session_id>")
 def download_file(session_id):
-    with sessions_lock:
-        session = sessions.get(session_id)
+    session = sessions.get(session_id)
 
     if not session or session["status"] != "done":
-        return jsonify({"error": "Dosya henüz hazır değil veya oturum silindi."}), 404
+        return jsonify({"error": "Dosya hazır değil."}), 404
 
     filepath = session["filepath"]
-    filename = session["filename"]
 
-    if not os.path.exists(filepath):
-        return jsonify({"error": "Dosya sunucuda bulunamadı."}), 404
+    if not filepath or not os.path.exists(filepath):
+        return jsonify({"error": "Dosya bulunamadı."}), 404
 
     @after_this_request
-    def remove_file(response):
+    def cleanup(response):
         try:
-            # Kullanıcı indirdiği an dosyayı yerel diskten güvenle kaldırır
-            if os.path.exists(filepath):
-                os.remove(filepath)
-            session_dir = os.path.dirname(filepath)
-            if os.path.isdir(session_dir) and not os.listdir(session_dir):
-                os.rmdir(session_dir)
-            
-            # RAM'deki session kaydını temizler (Memory leak önleyici)
-            with sessions_lock:
-                sessions.pop(session_id, None)
+            os.remove(filepath)
+
+            folder = os.path.dirname(filepath)
+
+            if os.path.isdir(folder) and not os.listdir(folder):
+                os.rmdir(folder)
+
+            sessions.pop(session_id, None)
+
         except Exception:
             pass
+
         return response
 
-    return send_file(filepath, as_attachment=True, download_name=filename)
+    return send_file(
+        filepath,
+        as_attachment=True,
+        download_name=session["filename"],
+    )
 
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, debug=False)
+    app.run(host="0.0.0.0", port=port)
