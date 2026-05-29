@@ -5,20 +5,20 @@ import time
 import glob
 from flask import Flask, request, jsonify, send_file, render_template, after_this_request
 import yt_dlp
-import imageio_ffmpeg
-os.environ["FFMPEG_BINARY"] = imageio_ffmpeg.get_ffmpeg_exe()
 
 app = Flask(__name__)
 
-DOWNLOAD_FOLDER = os.path.join(os.path.dirname(os.path.abspath(__file__)), "downloads")
+# Geçici indirme klasörü
+DOWNLOAD_FOLDER = "/tmp/yt_downloads"
 os.makedirs(DOWNLOAD_FOLDER, exist_ok=True)
 
-COOKIES_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "cookies.txt")
-
+# Aktif indirme oturumlarını takip eden sözlük
+# { session_id: { "progress": 0-100, "status": "...", "filename": "...", "filepath": "..." } }
 sessions = {}
 
 
 def cleanup_old_files(max_age_seconds=1800):
+    """30 dakikadan eski dosyaları temizler."""
     now = time.time()
     pattern = os.path.join(DOWNLOAD_FOLDER, "*")
     for filepath in glob.glob(pattern):
@@ -32,32 +32,19 @@ def cleanup_old_files(max_age_seconds=1800):
 
 
 def periodic_cleanup():
+    """Arka planda her 15 dakikada bir temizlik yapar."""
     while True:
         time.sleep(900)
         cleanup_old_files()
 
 
+# Arka plan temizlik thread'ini başlat
 cleanup_thread = threading.Thread(target=periodic_cleanup, daemon=True)
 cleanup_thread.start()
 
 
-def get_common_opts():
-    opts = {
-        "extractor_args": {
-            "youtube": {
-                "player_client": ["web", "android"],
-                "player_skip": ["webpage", "configs"],
-            }
-        },
-        "quiet": True,
-        "no_warnings": True,
-    }
-    if os.path.exists(COOKIES_FILE):
-        opts["cookiefile"] = COOKIES_FILE
-    return opts
-
-
 def run_download(session_id, url, fmt, quality):
+    """yt-dlp ile indirme işlemini gerçekleştirir."""
     session = sessions[session_id]
     session["status"] = "downloading"
 
@@ -75,12 +62,9 @@ def run_download(session_id, url, fmt, quality):
             session["progress"] = 95
             session["status"] = "processing"
 
-    common = get_common_opts()
-
+    # Format seçenekleri
     if fmt == "mp3":
         ydl_opts = {
-            **common,
-            # Shorts dahil her video türü için en iyi sesi al
             "format": "bestaudio/best",
             "outtmpl": output_template,
             "progress_hooks": [progress_hook],
@@ -91,32 +75,36 @@ def run_download(session_id, url, fmt, quality):
                     "preferredquality": quality,
                 }
             ],
+            "quiet": True,
+            "no_warnings": True,
         }
-    else:
-        # Shorts ve normal videolar için evrensel format seçimi
+    else:  # mp4
         quality_map = {
-            "1080": "bestvideo[height<=1080]+bestaudio/bestvideo[height<=1080]/best[height<=1080]/best",
-            "720":  "bestvideo[height<=720]+bestaudio/bestvideo[height<=720]/best[height<=720]/best",
-            "480":  "bestvideo[height<=480]+bestaudio/bestvideo[height<=480]/best[height<=480]/best",
-            "360":  "bestvideo[height<=360]+bestaudio/bestvideo[height<=360]/best[height<=360]/best",
+            "1080": "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]/best",
+            "720":  "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720][ext=mp4]/best",
+            "480":  "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480][ext=mp4]/best",
+            "360":  "bestvideo[height<=360][ext=mp4]+bestaudio[ext=m4a]/best[height<=360][ext=mp4]/best",
         }
         ydl_opts = {
-            **common,
             "format": quality_map.get(quality, quality_map["720"]),
             "outtmpl": output_template,
             "progress_hooks": [progress_hook],
             "merge_output_format": "mp4",
+            "quiet": True,
+            "no_warnings": True,
         }
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([url])
 
+        # İndirilen dosyayı bul
         session_dir = os.path.join(DOWNLOAD_FOLDER, session_id)
         files = os.listdir(session_dir)
         if not files:
             raise FileNotFoundError("İndirilen dosya bulunamadı.")
 
+        # En yeni dosyayı al
         filepath = max(
             [os.path.join(session_dir, f) for f in files],
             key=os.path.getmtime
@@ -141,6 +129,7 @@ def index():
 
 @app.route("/api/start", methods=["POST"])
 def start_download():
+    """İndirme işlemini başlatır, session_id döner."""
     cleanup_old_files()
 
     data = request.get_json()
@@ -172,6 +161,7 @@ def start_download():
 
 @app.route("/api/progress/<session_id>")
 def get_progress(session_id):
+    """İndirme ilerleme durumunu döner."""
     session = sessions.get(session_id)
     if not session:
         return jsonify({"error": "Oturum bulunamadı."}), 404
@@ -185,6 +175,7 @@ def get_progress(session_id):
 
 @app.route("/api/download/<session_id>")
 def download_file(session_id):
+    """Tamamlanan dosyayı kullanıcıya gönderir, ardından siler."""
     session = sessions.get(session_id)
     if not session or session["status"] != "done":
         return jsonify({"error": "Dosya hazır değil."}), 404
@@ -195,6 +186,7 @@ def download_file(session_id):
     if not os.path.exists(filepath):
         return jsonify({"error": "Dosya sunucuda bulunamadı."}), 404
 
+    # Gönderildikten sonra dosya + klasörü temizle
     @after_this_request
     def remove_file(response):
         try:
