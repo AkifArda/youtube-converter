@@ -5,6 +5,8 @@ import time
 import glob
 from flask import Flask, request, jsonify, send_file, render_template, after_this_request
 import yt_dlp
+import imageio_ffmpeg
+os.environ["FFMPEG_BINARY"] = imageio_ffmpeg.get_ffmpeg_exe()
 
 app = Flask(__name__)
 
