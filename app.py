@@ -51,15 +51,12 @@ def run_download(session_id, url, fmt, quality):
         if fmt == "mp3":
             payload = {
                 "url": url,
-                "downloadMode": "audio",
-                "audioFormat": "mp3",
-                "audioBitrate": quality,
+                "audioOnly": True
             }
         else:
             payload = {
                 "url": url,
-                "downloadMode": "auto",
-                "videoQuality": quality,
+                "videoQuality": quality
             }
 
         headers = {
@@ -76,10 +73,12 @@ def run_download(session_id, url, fmt, quality):
             timeout=30,
         )
 
+        print("Cobalt status:", response.status_code)
+        print("Cobalt response:", response.text)
+
         response.raise_for_status()
 
         data = response.json()
-        session["progress"] = 40
 
         if data.get("status") == "error":
             raise Exception(
@@ -89,7 +88,7 @@ def run_download(session_id, url, fmt, quality):
         download_url = data.get("url")
 
         if not download_url:
-            raise Exception("Cobalt indirme bağlantısı alınamadı.")
+            raise Exception("İndirme linki alınamadı.")
 
         session["progress"] = 50
 
@@ -143,7 +142,7 @@ def start_download():
 
     url = data.get("url", "").strip()
     fmt = data.get("format", "mp3")
-    quality = data.get("quality", "192")
+    quality = data.get("quality", "720")
 
     if not url:
         return jsonify({"error": "URL boş olamaz."}), 400
@@ -215,4 +214,8 @@ def download_file(session_id):
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(
+        host="0.0.0.0",
+        port=port,
+        debug=False
+    )
